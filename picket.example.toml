@@ -1,0 +1,5 @@
+own_authors = ["your-git-name", "Claude"]
+[repos]
+fork = ["vendor/upstream-fork*"]
+legacy = ["clients/old-project"]
+ignore = ["vendor/big-monorepo"]

@@ -1,0 +1,1 @@
+{"bomFormat":"CycloneDX","specVersion":"1.6","version":1,"components":[{"type":"library","name":"cryptography","version":"45.0.4","purl":"pkg:pypi/cryptography@45.0.4"}]}

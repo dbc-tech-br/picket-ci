@@ -1,0 +1,14 @@
+.venv/
+venv/
+__pycache__/
+*.pyc
+.env
+.env.*
+!.env.example
+reports/
+*.egg-info/
+dist/
+.pytest_cache/
+.DS_Store
+.handoff/
+reports-run.log
