@@ -48,7 +48,7 @@ def normalize(data: dict[str, Any], repo: Path) -> list[Finding]:
 
 def run(repo: Path, ctx: Context) -> tuple[list[Finding], dict[str, Any]]:
     try:
-        manifests = [name for name in select_manifests(tracked_files(repo, ctx.timeout)) if (repo / name).is_file()]
+        manifests = [name for name in select_manifests(tracked_files(repo, ctx.timeout)) if (repo / name).is_file() and not ctx.excludes(name)]
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
         return [], status("error", ctx.versions.get("osv-scanner"), error=f"Cannot list manifests ({type(exc).__name__})")
     if not manifests:

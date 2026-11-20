@@ -26,12 +26,15 @@ def run(repo: Path, ctx: Context) -> tuple[list[Finding], dict[str, Any]]:
     with tempfile.TemporaryDirectory(prefix="picket-gitleaks-") as tmp:
         output = Path(tmp) / "output.json"
         args = ["git", "--no-banner", "--redact", "-f", "json", "-r", str(output)]
+        log_opts = ctx.git_log_opts or ""
         if ctx.kind == "fork":
-            args.append("--log-opts=" + shlex.join([f"--author={author}" for author in ctx.own_authors]))
+            log_opts = " ".join(filter(None, [log_opts, shlex.join([f"--author={author}" for author in ctx.own_authors])]))
+        if log_opts:
+            args.append("--log-opts=" + log_opts)
         data, state = run_json("gitleaks", [*args, str(repo)], output, ctx)
         if data is None:
             return [], state
         try:
-            return normalize(data, repo), state
+            return [item for item in normalize(data, repo) if not ctx.excludes(item["file"])], state
         except (TypeError, AttributeError, KeyError, ValueError):
             return [], status("error", state["version"], state["duration_s"], "Invalid Gitleaks JSON structure")

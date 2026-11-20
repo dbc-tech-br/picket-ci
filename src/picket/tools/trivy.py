@@ -34,6 +34,8 @@ def run(repo: Path, ctx: Context) -> tuple[list[Finding], dict[str, Any]]:
         args = ["fs", "--quiet"]
         if ctx.skip_db_update:
             args += ["--skip-db-update", "--skip-java-db-update"]
+        for excluded in ctx.exclude_paths:
+            args += ["--skip-dirs", excluded, "--skip-files", excluded]
         args += ["--scanners", "vuln,misconfig,license", "--skip-dirs", "node_modules", "--skip-dirs", ".venv", "--skip-dirs", "venv", "--format", "json", "-o", str(output), str(repo)]
         data, state = run_json("trivy", args, output, ctx)
         if data is None:

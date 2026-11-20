@@ -13,6 +13,7 @@ from typing import Any
 from picket import eol
 from picket.config import load_config
 from picket.discover import discover, repo_slug
+from picket.gate import gate, write_baseline
 from picket.models import SEVERITIES, deduplicate
 from picket.report import counts, write_report, write_summary
 from picket.runner import Context, execute, prepare_trivy, tool_versions
@@ -82,15 +83,32 @@ def main(argv: list[str] | None = None) -> int:
         subparser.add_argument("--config", type=Path)
         subparser.add_argument("--out-dir", type=Path, default=Path("reports"))
         subparser.add_argument("--timeout", type=positive_int, default=600, help="Subprocess timeout in seconds (default: 600)")
+        subparser.add_argument("--exclude-path", action="append", default=[], metavar="PATH")
+        subparser.add_argument("--git-log-opts")
         if command == "scan-all":
             subparser.add_argument("--jobs", type=positive_int, default=4)
             subparser.add_argument("--max-depth", type=nonnegative_int, default=4)
             subparser.add_argument("--exclude", nargs="+", action="extend", default=[], metavar="GLOB")
+    baseline_parser = subparsers.add_parser("baseline")
+    baseline_parser.add_argument("report", type=Path)
+    baseline_parser.add_argument("--out", type=Path, default=Path(".picket/baseline.json"))
+    gate_parser = subparsers.add_parser("gate")
+    gate_parser.add_argument("report", type=Path)
+    gate_parser.add_argument("--baseline", type=Path, default=Path(".picket/baseline.json"))
+    gate_parser.add_argument("--target-branch")
+    gate_parser.add_argument("--prod-branches", default="prod,main,master")
+    gate_parser.add_argument("--summary", type=Path)
+    gate_parser.add_argument("--annotations", action="store_true")
     summary_parser = subparsers.add_parser("summary")
     summary_parser.add_argument("reports_dir", type=Path)
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.INFO, format="%(message)s")
     try:
+        if args.command == "baseline":
+            write_baseline(args.report, args.out)
+            return 0
+        if args.command == "gate":
+            return gate(args.report, args.baseline, args.target_branch, args.prod_branches, args.summary, args.annotations)
         if args.command == "summary":
             if not args.reports_dir.is_dir():
                 parser.error("Reports directory does not exist")
@@ -101,6 +119,9 @@ def main(argv: list[str] | None = None) -> int:
             parser.error("Repository/root directory does not exist")
         if args.command == "scan" and not (root / ".git").exists():
             parser.error("Repository must contain .git")
+        for excluded in args.exclude_path:
+            if Path(excluded).is_absolute() or ".." in Path(excluded).parts or not excluded or Path(excluded) == Path("."):
+                parser.error("--exclude-path must be a relative path below the scan root")
         config = load_config(root, args.config)
         out_dir = args.out_dir.resolve()
         out_dir.mkdir(parents=True, exist_ok=True)
@@ -110,10 +131,10 @@ def main(argv: list[str] | None = None) -> int:
             LOGGER.warning("Trivy DB download failed or binary missing; continuing with one worker and DB updates enabled")
         versions = tool_versions(args.timeout)
         if args.command == "scan":
-            report = scan_repo(root, Context(out_dir, repo_slug(root), args.timeout, ready, versions, config.kind(root, root), config.own_authors))
+            report = scan_repo(root, Context(out_dir, repo_slug(root), args.timeout, ready, versions, config.kind(root, root), config.own_authors, args.exclude_path, args.git_log_opts))
             print(json.dumps({"repo": report["repo"], "counts": report["counts"], "counts_by_category": report["counts_by_category"]}))
         else:
-            repos = sorted(discover(root, args.max_depth, [*args.exclude, *config.ignore]))
+            repos = sorted(discover(root, args.max_depth, [*args.exclude, *args.exclude_path, *config.ignore]))
             origins = {}
             duplicates = {}
             for path in repos:
@@ -127,7 +148,7 @@ def main(argv: list[str] | None = None) -> int:
                     else:
                         origins[key] = repo_slug(path, root)
             def scan(path: Path) -> dict[str, Any]:
-                ctx = Context(out_dir, repo_slug(path, root), args.timeout, ready, versions, config.kind(path, root), config.own_authors)
+                ctx = Context(out_dir, repo_slug(path, root), args.timeout, ready, versions, config.kind(path, root), config.own_authors, args.exclude_path, args.git_log_opts)
                 if path in duplicates:
                     severity, categories = counts([])
                     report = {"repo": ctx.slug, "path": str(path), "kind": ctx.kind, "duplicate_of": duplicates[path],

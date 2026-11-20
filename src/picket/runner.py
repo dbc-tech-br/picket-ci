@@ -20,6 +20,12 @@ class Context:
     versions: dict[str, str | None] = field(default_factory=dict)
     kind: str = "own"
     own_authors: list[str] = field(default_factory=list)
+    exclude_paths: list[str] = field(default_factory=list)
+    git_log_opts: str | None = None
+
+    def excludes(self, filename: str) -> bool:
+        path = Path(filename)
+        return any(path == Path(excluded) or Path(excluded) in path.parents for excluded in self.exclude_paths)
 
 
 def execute(args: list[str], timeout: float = 600, cwd: Path | None = None) -> subprocess.CompletedProcess[str]:

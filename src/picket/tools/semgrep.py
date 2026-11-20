@@ -20,7 +20,7 @@ def run(repo: Path, ctx: Context) -> tuple[list[Finding], dict[str, Any]]:
         for config in ("p/python", "p/javascript", "p/typescript", "p/dockerfile", "p/owasp-top-ten"):
             args += ["--config", config]
         args += ["--metrics", "off", "--quiet", "--json", "-o", str(output)]
-        for excluded in ("node_modules", ".venv", "venv", "dist", "build"):
+        for excluded in ("node_modules", ".venv", "venv", "dist", "build", *ctx.exclude_paths):
             args += ["--exclude", excluded]
         data, state = run_json("semgrep", [*args, str(repo)], output, ctx)
         if data is None:

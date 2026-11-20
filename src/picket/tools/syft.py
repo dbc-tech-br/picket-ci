@@ -11,5 +11,6 @@ def run(repo: Path, ctx: Context) -> tuple[list[Finding], dict[str, Any]]:
     output = directory / f"{ctx.slug}.cdx.json"
     # Remove an earlier artifact so a failed invocation cannot appear successful.
     output.unlink(missing_ok=True)
-    _, state = run_json("syft", [f"dir:{repo}", "-o", f"cyclonedx-json={output}", "--quiet"], output, ctx)
+    excludes = [arg for path in ctx.exclude_paths for arg in ("--exclude", f"./{path}", "--exclude", f"./{path}/**")]
+    _, state = run_json("syft", [*excludes, f"dir:{repo}", "-o", f"cyclonedx-json={output}", "--quiet"], output, ctx)
     return [], state

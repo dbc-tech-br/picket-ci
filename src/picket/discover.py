@@ -3,7 +3,7 @@
 import fnmatch
 from pathlib import Path
 
-SKIP_DIRS = {"node_modules", ".venv", "venv", "dist", "build", "graphify-out", ".git"}
+SKIP_DIRS = {"node_modules", ".venv", "venv", "dist", "build", "graphify-out", ".git", ".picket-src"}
 
 
 def discover(root: Path, max_depth: int = 4, excludes: list[str] | None = None) -> list[Path]:

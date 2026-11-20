@@ -41,7 +41,7 @@ name. A root that is itself a repository uses its directory name.
 `kind` and `duplicate_of`, ordered by own, fork, legacy, then descending risk
 score (`critical * 10 + high`).
 
-Findings are diagnostic and do not change the CLI exit code. Inspect each
+Scan findings are diagnostic and do not change the scan command exit code. Inspect each
 report's `tools` statuses for incomplete scans, missing binaries, timeouts, or
 invalid scanner output. Scanner exit codes alone are not errors: valid JSON
 is processed even when a scanner exits nonzero. Operational CLI errors return
@@ -70,3 +70,55 @@ instead produce low severity `picket-eol-range-allows` findings. Components and
 EOL findings are deduplicated by product, version, and source file, keeping the
 first line. Tracked files missing from the working tree are skipped.
 Network failures are recorded under `tools.eol` while scanning continues.
+
+## CI gate
+
+Copy `templates/caller.yml` to `.github/workflows/picket.yml` in a caller repo.
+It calls `dbc-tech-br/picket-ci/.github/workflows/scan.yml@v0.2.0` with read-only
+contents permission and no secrets. Inputs are `prod-branches` (default
+`prod,main,master`), `config` (default `.picket/picket.toml`, used if present),
+and `fail` (default `true`; `false` enables report-only mode). Reports are
+uploaded as `picket-report` for 14 days, including failed gate runs.
+
+PR secret scans inspect only commits between the base and head SHA; push
+scans inspect full history. `scan --git-log-opts 'BASE..HEAD'` sets that range
+and combines it with fork author filters. Repeat `scan --exclude-path PATH`
+to exclude root-relative files or directories from scanning. CI excludes its
+`.picket-src` checkout; discovery also skips that directory.
+
+## Baseline workflow
+
+The first run without a baseline passes and lists findings that would block.
+Download the report artifact, review it, then run:
+
+```sh
+picket baseline report.json --out .picket/baseline.json
+picket gate report.json --baseline .picket/baseline.json --target-branch prod \
+  --summary summary.md --annotations
+```
+
+Commit `.picket/baseline.json` in the caller repository. All current findings
+are included, with the same fingerprints used by reports; only new findings
+can block. Refresh deliberately after reviewing accepted findings. The summary
+compares new and baseline findings by severity, lists blockers, and collapses
+up to 100 other new findings. Existing findings are counted only while still
+present in the current report. Baseline timestamps record creation in UTC.
+
+## Blocking rules
+
+For new findings, the gate blocks secrets above low severity, high/critical
+SCA findings with an available fix, and pinned expired runtimes on configured
+production branches only. Misconfiguration, SAST, and license findings remain
+report-only. With a baseline, Trivy, OSV, or Gitleaks errors also block;
+Semgrep, Syft, and EOL errors warn. A missing baseline always passes.
+`scan` remains diagnostic; `gate` exits 1 on a block and 0 on a pass.
+
+## Releasing
+
+Update workflow-level `PICKET_REF` in `.github/workflows/scan.yml` to the new
+release tag, update the caller template and usage examples, run the tests and
+actionlint, then tag that revision. The reusable workflow checks out Picket
+and its scanner installer at this same pinned ref. Scanner versions are
+defined once in the workflow; binary downloads are verified against each
+release's SHA256 checksums. For a local installer run, export those five
+version variables first, then run `bash ci/install-scanners.sh /tmp/picket-bin`.

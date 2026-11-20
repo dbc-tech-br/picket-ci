@@ -1,0 +1,96 @@
+name: Picket security gate
+
+on:
+  workflow_call:
+    inputs:
+      prod-branches:
+        type: string
+        default: prod,main,master
+      config:
+        type: string
+        default: .picket/picket.toml
+      fail:
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+env:
+  PICKET_REF: v0.2.0
+  TRIVY_VERSION: 0.76.2
+  OSV_VERSION: 2.7.0
+  SYFT_VERSION: 1.57.0
+  GITLEAKS_VERSION: 8.30.1
+  SEMGREP_VERSION: 1.184.0
+
+jobs:
+  scan:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out caller
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Set up uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+      - name: Check out Picket and its installer
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: dbc-tech-br/picket-ci
+          ref: ${{ env.PICKET_REF }}
+          path: .picket-src
+          persist-credentials: false
+      - name: Install scanners
+        run: bash .picket-src/ci/install-scanners.sh "$RUNNER_TEMP/bin"
+      - name: Install Picket
+        run: uv tool install ./.picket-src
+      - name: Cache date
+        id: date
+        run: echo "day=$(date -u +%F)" >> "$GITHUB_OUTPUT"
+      - name: Cache Trivy database
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ~/.cache/trivy
+          key: trivy-db-${{ runner.os }}-${{ steps.date.outputs.day }}
+          restore-keys: trivy-db-${{ runner.os }}-
+      - name: Scan
+        env:
+          PICKET_CONFIG: ${{ inputs.config }}
+          EVENT_NAME: ${{ github.event_name }}
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          args=(scan "$GITHUB_WORKSPACE" --out-dir "$RUNNER_TEMP/picket" --exclude-path .picket-src)
+          if [[ -f "$PICKET_CONFIG" ]]; then
+            args+=(--config "$PICKET_CONFIG")
+          fi
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            args+=(--git-log-opts "$PR_BASE_SHA..$PR_HEAD_SHA")
+          fi
+          picket "${args[@]}"
+      - name: Gate
+        env:
+          TARGET_BRANCH: ${{ github.base_ref || github.ref_name }}
+          PROD_BRANCHES: ${{ inputs.prod-branches }}
+          FAIL: ${{ inputs.fail }}
+        run: |
+          report="$RUNNER_TEMP/picket/$(basename "$GITHUB_WORKSPACE").json"
+          args=(gate "$report" --baseline .picket/baseline.json --target-branch "$TARGET_BRANCH"
+            --prod-branches "$PROD_BRANCHES" --summary "$GITHUB_STEP_SUMMARY" --annotations)
+          if [[ "$FAIL" == true ]]; then
+            picket "${args[@]}"
+          else
+            picket "${args[@]}" || true
+          fi
+      - name: Upload report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: picket-report
+          path: ${{ runner.temp }}/picket
+          retention-days: 14

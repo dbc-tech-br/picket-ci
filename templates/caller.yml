@@ -1,0 +1,27 @@
+# Bootstrap: download picket-report from the first run, then run
+# `picket baseline <report.json>` and commit .picket/baseline.json.
+# The reusable workflow is pinned to a release tag; update tags deliberately.
+name: Security
+
+on:
+  pull_request:
+    branches: [dev, prod, main, master]
+  push:
+    branches: [dev, prod, main, master]
+  schedule:
+    # Weekly scan so idle repos still catch newly published CVEs and EOL dates.
+    - cron: "17 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: picket-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  picket:
+    permissions:
+      contents: read
+    uses: dbc-tech-br/picket-ci/.github/workflows/scan.yml@v0.2.0

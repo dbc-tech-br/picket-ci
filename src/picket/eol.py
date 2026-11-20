@@ -159,7 +159,7 @@ def classify(product: str, version: str, source_file: str, line: int | None,
 def run(repo: Path, ctx: Context) -> tuple[list[Finding], list[dict[str, Any]], dict[str, Any]]:
     start = time.monotonic()
     try:
-        detected, findings, errors = detect(repo, tracked_files(repo, ctx.timeout))
+        detected, findings, errors = detect(repo, [name for name in tracked_files(repo, ctx.timeout) if not ctx.excludes(name)])
     except (OSError, RuntimeError, subprocess.TimeoutExpired) as exc:
         return [], [], status("error", error=f"Cannot list runtime sources ({type(exc).__name__})")
     components = []
